@@ -1,0 +1,1 @@
+QR based attendance and temperature monitoring system
