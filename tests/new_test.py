@@ -104,7 +104,7 @@ class MainApp:
         self.root.title("QR Based Attendance and Temperature Monitoring System")
         self.root.geometry("1280x1024")
 
-        self.db = Database("/home/sheldoncoopal/QRBATMS/qrbatms.db")
+        self.db = Database("/home/sheldoncoopal/QRBAT-MS/qrbat-ms/qrbatms.db")
         self.sim800l=SIM800L('/dev/serial0')
         
         self.top_frame = customtkinter.CTkFrame(self.root,corner_radius=0)
