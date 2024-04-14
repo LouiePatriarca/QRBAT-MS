@@ -1,8 +1,13 @@
+#!/usr/bin/env python
+
+import threading
 from tkinter import messagebox
 import customtkinter
 import cv2
 import PIL
 import RPi.GPIO as GPIO
+import serial
+import time
 
 from CTkTable import *
 from mlx90614 import MLX90614
@@ -37,6 +42,8 @@ class MainApp:
         self.btn_register.grid(column=0, row=1, padx=10, sticky=NW)
 
         self.qr_code_detected = False
+
+        self.ser = serial.Serial('/dev/serial0', baudrate=9600, timeout=1)
                            
         self.camera = cv2.VideoCapture(0)
         if not self.camera.isOpened():
@@ -45,7 +52,28 @@ class MainApp:
         
         self.toplevel_window = None
         self.scan_qr_code()
-        
+    
+    def send_sms(self, contact_number, sms_message):
+        # AT command to set SIM800L to text mode
+        self.ser.write(b'AT+CMGF=1\r\n')
+        time.sleep(1)
+
+        # AT command to set the phone number
+        self.ser.write(b'AT+CMGS="' + contact_number.encode() + b'"\r\n')
+        time.sleep(1)
+
+        # Sending the message
+        self.ser.write(sms_message.encode() + b"\r\n")
+        time.sleep(1)
+
+        # End the message with CTRL+Z
+        self.ser.write(bytes([26]))
+        time.sleep(1)
+
+        # Read the response
+        response = self.ser.readlines()
+        print(response)
+
     def scan_qr_code(self):
         if self.camera == None:
             self.camera = cv2.VideoCapture(0)
@@ -82,16 +110,24 @@ class MainApp:
                 attendance_date = now.strftime("%d/%m/%Y")
                 attendance_time = now.strftime("%H:%M:%S")
                 
-                # Check if attendance already exists
-                if not self.db.attendance_exists(student_number, attendance_date):
-                    GPIO.output(17, GPIO.HIGH)
-                    self.db.add_attendance(student_number, attendance_date, attendance_time, temperature)
-                    name = self.db.get_name_by_number(student_number)
-                    self.show_student_information(student_number, name, attendance_date, attendance_time, temperature)
-                    self.camera.release()
-                else:
-                    GPIO.output(27, GPIO.HIGH)
-                    self.show_attendance_exists()
+                try:
+                    name = self.db.get_name_by_number(student_number) 
+                    if name != "":
+                        # Check if attendance already exists
+                        if not self.db.attendance_exists(student_number, attendance_date):
+                            GPIO.output(17, GPIO.HIGH)
+                            self.db.add_attendance(student_number, attendance_date, attendance_time, temperature)
+                            contact_number = self.db.get_parent_contact_by_number(student_number)
+                            time_in = str(attendance_date) + " " + str(attendance_time)
+                            sms_message = "Name: " + str(name) + "\nStudent Number: "  + str(student_number) + "\nTime In: " + str(time_in) + "\nTemperature: " + str(temperature)
+                            self.show_student_information(student_number, name, attendance_date, attendance_time, temperature, contact_number, sms_message)
+                            self.camera.release()
+                        else:
+                            GPIO.output(27, GPIO.HIGH)
+                            self.show_attendance_exists()
+                            self.camera.release()
+                except TypeError as e:
+                    self.show_invalid_QR()
                     self.camera.release()
 
             bus.close()
@@ -102,35 +138,52 @@ class MainApp:
         if not self.qr_code_detected:
             self.root.after(20, self.scan_qr_code)
 
+    def send(self, contact_number, sms_message):
+        print(sms_message)
+        self.send_sms(str(contact_number), str(sms_message))
+
+    def show_invalid_QR(self):
+        show_invalid_QR_window = customtkinter.CTkToplevel()
+        show_invalid_QR_window.geometry("1280x1024")
+        show_invalid_QR_window.title("Invalid QR Code")
+
+        name_label = customtkinter.CTkLabel(show_invalid_QR_window, text="Invalid QR Code!", text_color="red", font=("Arial", 60, "bold"))
+        name_label.pack(fill=BOTH, expand=True)
+        show_invalid_QR_window.after(3000, lambda: show_invalid_QR_window.destroy())
+
     def show_attendance_exists(self):
         show_attendance_exists_window = customtkinter.CTkToplevel()
         show_attendance_exists_window.geometry("1280x1024")
         show_attendance_exists_window.title("Already Logged In")
 
-        name_label = customtkinter.CTkLabel(show_attendance_exists_window, text="You have already logged in!", text_color="red", font=("Arial", 32, "bold"))
+        name_label = customtkinter.CTkLabel(show_attendance_exists_window, text="You have already logged in!", text_color="red", font=("Arial", 50, "bold"))
         name_label.pack(fill=BOTH, expand=True)
         show_attendance_exists_window.after(3000, lambda: show_attendance_exists_window.destroy())
 
-    def show_student_information(self, student_number, name, attendance_date, attendance_time, temperature):
+    def show_student_information(self, student_number, name, attendance_date, attendance_time, temperature, contact_number, sms_message):
         student_information_window = customtkinter.CTkToplevel()
         student_information_window.geometry("1280x1024")
         student_information_window.title("Logged In")
 
-        welcome_label = customtkinter.CTkLabel(student_information_window, text="Welcome!", font=("Arial", 32, "bold"))
+        welcome_label = customtkinter.CTkLabel(student_information_window, text="Welcome!", font=("Arial", 80, "bold"))
         welcome_label.pack(fill=BOTH, expand=True)
 
         name_label = customtkinter.CTkLabel(student_information_window, text=name, text_color="blue", font=("Arial", 80, "bold"))
         name_label.pack(fill=BOTH, expand=True)
 
-        student_number_label = customtkinter.CTkLabel(student_information_window, text=student_number, font=("Arial", 24, "bold"))
+        student_number_label = customtkinter.CTkLabel(student_information_window, text=student_number, font=("Arial", 60, "bold"))
         student_number_label.pack(fill=BOTH, expand=True)
 
-        date_label = customtkinter.CTkLabel(student_information_window, text=attendance_date + " " + attendance_time, font=("Arial", 24, "bold"))
+        date_label = customtkinter.CTkLabel(student_information_window, text=attendance_date + " " + attendance_time, font=("Arial", 80, "bold"))
         date_label.pack(fill=BOTH, expand=True)
 
         temperature_color = "red" if float(temperature) > 37 else "green"
-        temperature_label = customtkinter.CTkLabel(student_information_window, text="Temperature: " + temperature, text_color=temperature_color, font=("Arial", 24, "bold"))
+        temperature_label = customtkinter.CTkLabel(student_information_window, text="Temperature: " + temperature, text_color=temperature_color, font=("Arial", 80, "bold"))
         temperature_label.pack(fill=BOTH, expand=True)
+
+        thread = threading.Thread(target = self.send, args=(contact_number, sms_message))
+        thread.start()
+        thread.join()
         student_information_window.after(3000, lambda: student_information_window.destroy())
 
     def populate_table(self, tree):

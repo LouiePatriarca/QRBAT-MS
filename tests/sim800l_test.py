@@ -14,7 +14,7 @@ def send_sms(number, message):
     time.sleep(1)
 
     # Sending the message
-    ser.write(message.encode() + b"\r\n")
+    ser.write(message.encode('utf-8') + b"\r\n")
     time.sleep(1)
 
     # End the message with CTRL+Z
@@ -26,7 +26,7 @@ def send_sms(number, message):
     print(response)
 
 # Example usage
-send_sms("+639564925360", "Hello from your Python app!")
+send_sms("+639564925360", "Name: John Bryan Odina \nTime In: 04/04/2024 07:02:49 \nTemperature: 35.29")
 
 # Close the serial port
 ser.close()
